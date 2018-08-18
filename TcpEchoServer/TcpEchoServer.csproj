@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Modules\" />
+    <Folder Include="Network\" />
   </ItemGroup>
 </Project>
