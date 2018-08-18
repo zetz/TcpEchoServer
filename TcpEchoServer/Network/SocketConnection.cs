@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using System.Text;
@@ -11,7 +12,11 @@ namespace TcpEchoServer.Network
 	{
 		private Socket _socket;
 
-		public SocketConnection(Socket socket) {
+		private static List<SocketConnection> _connections = new List<SocketConnection>();
+		public static IReadOnlyList<SocketConnection> Connections => _connections.AsReadOnly();
+
+		public SocketConnection(Socket socket)
+		{
 			_socket = socket;
 		}
 
@@ -42,27 +47,33 @@ namespace TcpEchoServer.Network
 			_socket.Disconnect(false);
 		}
 
-		private async Task Init(Socket socket)
+		public static void OnAccept(Socket socket)
 		{
-			Console.WriteLine($"[{socket.RemoteEndPoint}] : connected.");
+			var client = new SocketConnection(socket);
+			_ = client.DoReceiveTask();
+		}
 
+		private async Task DoReceiveTask()
+		{
 			var pipe = new Pipe();
 
-			Task writing = FillPipeAsync(socket, pipe.Writer);
-			Task reading = ReadPipeAsync(socket, pipe.Reader);
+			Task writing = FillPipeAsync(_socket, pipe.Writer);
+			Task reading = ReadPipeAsync(_socket, pipe.Reader);
 
-			var client = new SocketConnection(socket);
-
-			//OnConnected?.Invoke(client);
+			Console.WriteLine($"[{_socket.RemoteEndPoint}] : connected.");
+			lock (_connections) {
+				_connections.Add(this);
+			}
 
 			await Task.WhenAll(reading, writing);
 
-			//OnDisconnected?.Invoke(client);
-
-			Console.WriteLine($"[{socket.RemoteEndPoint}] : disconnected.");
+			Console.WriteLine($"[{_socket.RemoteEndPoint}] : disconnected.");
+			lock (_connections) {
+				_connections.Remove(this);
+			}
 		}
 
-		private  async Task FillPipeAsync(Socket socket, PipeWriter writer)
+		private async Task FillPipeAsync(Socket socket, PipeWriter writer)
 		{
 			const int minimumBufferSize = 512;
 
@@ -94,7 +105,7 @@ namespace TcpEchoServer.Network
 			writer.Complete();
 		}
 
-		private  async Task ReadPipeAsync(Socket socket, PipeReader reader)
+		private async Task ReadPipeAsync(Socket socket, PipeReader reader)
 		{
 			while (true) {
 				ReadResult result = await reader.ReadAsync();
@@ -137,12 +148,28 @@ namespace TcpEchoServer.Network
 		private void ProcessLine(Socket socket, in ReadOnlySequence<byte> buffer)
 		{
 			Console.WriteLine($"[{socket.RemoteEndPoint}]: ");
-			foreach (var segment in buffer) {
-				var msg = Encoding.UTF8.GetString(segment.Span);
-				Console.Write(msg);
-				socket.Send(segment.Span);
+
+			var msg = GetAsciiString(buffer);
+			Console.WriteLine(msg);
+
+			// TODO
+			socket.Send(buffer.First.Span);
+		}
+
+		private string GetAsciiString(ReadOnlySequence<byte> buffer)
+		{
+			if (buffer.IsSingleSegment) {
+				return Encoding.ASCII.GetString(buffer.First.Span);
 			}
-			Console.WriteLine();
+
+			return string.Create((int)buffer.Length, buffer, (span, sequence) =>
+			{
+				foreach (var segment in sequence) {
+					Encoding.ASCII.GetChars(segment.Span, span);
+
+					span = span.Slice(segment.Length);
+				}
+			});
 		}
 	}
 }
