@@ -12,9 +12,9 @@
     <LangVersion>Latest</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="System.IO.Pipelines" Version="4.5.0" />
+    <Folder Include="Network\" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Network\" />
+    <PackageReference Include="System.IO.Pipelines" Version="4.5.0" />
   </ItemGroup>
 </Project>
